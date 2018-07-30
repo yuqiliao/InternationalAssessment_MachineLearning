@@ -7,90 +7,142 @@
 
 ### Set things up -----
 
-install.packages("EdSurvey")
-install.packages("modeest")
-install.packages("randomForest")
-install.packages("e1071")
-install.packages("gbm")
+#install.packages("EdSurvey")
+devtools::load_all("U:/ESSIN Task 14/NAEP R Program/Yuqi/edsurvey")
+
+#install.packages("modeest")
+#install.packages("randomForest")
+#install.packages("e1071")
+#install.packages("gbm")
+
 library(gbm)
 library(dplyr)
-library(EdSurvey)
 library(modeest)
 library(caret)
 library(randomForest)
 library(e1071)
 
 
-
-
 ### Download/Read in -----
-setwd("/Users/Yuqi/Desktop/Files/AIR/Machine learning/Data")
 #downloadTIMSS(year=2015, root = "/Users/Yuqi/Desktop/Files/AIR/Machine learning/Data")
-T15_USA <- readTIMSS("./TIMSS2015", countries = c("usa"), gradeLvl = "4")
+#T15_USA <- readTIMSS("G:/Conference/2019/Data/TIMSS/TIMSS2015", countries = c("usa"), gradeLvl = "4")
+P15_USA <- readPIRLS("./Data/PIRLS/P16_and_PL16_Data", countries = c("usa"))
+
 
 ### calculate missing rate and decide on which variables to use
-# read in everything first
-T15_USA_df <- getData(data = T15_USA, varnames = colnames(T15_USA),
+# read in everything (in the student file and the teacher file) first
+student_teacher_var <- tolower(union(P15_USA$fileFormat$variableName, P15_USA$fileFormatTeacher$variableName))
+P15_USA_df <- getData(data = P15_USA, varnames = student_teacher_var,
                       omittedLevels = FALSE, addAttributes = TRUE)
 
 # calculate missing rate
-missing_rate <- colMeans(is.na(T15_USA_df)) 
+missing_rate <- colMeans(is.na(P15_USA_df)) 
 
 # keep variabels that has missing rate < 0.1
 missing_rate_less0.1 <- missing_rate[missing_rate < 0.1]
 names(missing_rate_less0.1)
 
-# keep only student variables for now
-stuVarCols <- c(9, 99:186)
-missing_rate_less0.1_stu <- missing_rate_less0.1[stuVarCols]
-names_missing_rate_less0.1_stu <- names(missing_rate_less0.1_stu)[-2] #[-2] is to exclude "asbg01" (boy/girl) because "itsex" is included
+# exclude variables that are weights, ids (except for itsex), pvs, (and vars taht are derived from questionnaire items), as were done in the TIMSS paper
+stuVarCols <- c(9, 51:115) #9 is itsex, accordingly "asbg01" (boy/girl) is excluded
+tchVarCols <- c(290:416) 
+stu_tch_VarCols <- c(stuVarCols, tchVarCols)
+
+missing_rate_less0.1_stu_tch <- names(missing_rate_less0.1[stu_tch_VarCols])
 
 # define variable names for Y
-math_ach_lvl <- c("asmibm01", "asmibm02", "asmibm03", "asmibm04", "asmibm05")
+read_ach_lvl <- c("asribm01", "asribm02", "asribm03", "asribm04", "asribm05")
 
 # get the df using listwise deletion of the omitted levels
-T15_USA_df_stu_omittedIncluded <- getData(data = T15_USA, varnames = c(names_missing_rate_less0.1_stu, math_ach_lvl),
-                          omittedLevels = FALSE, addAttributes = TRUE)
-T15_USA_df_stu <- getData(data = T15_USA, varnames = c(names_missing_rate_less0.1_stu, math_ach_lvl),
+P15_USA_df_stu_tch <- getData(data = P15_USA, varnames = c(missing_rate_less0.1_stu_tch, read_ach_lvl),
                                           omittedLevels = TRUE, addAttributes = TRUE)
 
-### Define Y -----
-### Y would be the majority vote of ASMIBM01-05
-T15_USA_df_stu_clean <- T15_USA_df_stu %>% 
-  #select(idcntry, idstud, asmibm01, asmibm02, asmibm03, asmibm04, asmibm05) %>% 
-  #filter(idstud %in% c("10101", "10102", "10103", "10104")) %>% 
+### Define Y, process the dataset before modelling -----
+### Y would be the majority vote of asribm01-05
+P15_USA_df_stu_tch <- P15_USA_df_stu_tch %>% 
+  mutate(asribm01 = as.numeric(asribm01),
+         asribm02 = as.numeric(asribm02),
+         asribm03 = as.numeric(asribm03),
+         asribm04 = as.numeric(asribm04),
+         asribm05 = as.numeric(asribm05))
+
+P15_USA_df_stu_tch_clean <- P15_USA_df_stu_tch %>% 
   # create new variable math_ach_lvl which is the mode of all asmibm01-05
   rowwise() %>% 
-  summarize(math_ach_lvl = round((asmibm01 + asmibm02 + asmibm03 + asmibm04 +asmibm05)/5, digits = 0)) %>% 
+  summarize(read_ach_lvl = round((asribm01 + asribm02 + asribm03 + asribm04 +asribm05)/5, digits = 0)) %>% 
   ungroup() %>% 
-  bind_cols(T15_USA_df_stu) %>% 
+  bind_cols(P15_USA_df_stu_tch) %>% 
   # create dummy version of math_ach_lvl
-  mutate(math_ach_lvl_atabv4 = ifelse(math_ach_lvl %in% c(4,5), 1, 0),
-         math_ach_lvl_atabv4 = as.factor(math_ach_lvl_atabv4)) %>% 
-  select(-c("asmibm01", "asmibm02", "asmibm03", "asmibm04", "asmibm05", "math_ach_lvl"))
+  mutate(read_ach_lvl_atabv4 = ifelse(read_ach_lvl %in% c(4,5), 1, 0),
+         read_ach_lvl_atabv4 = as.factor(read_ach_lvl_atabv4)) %>% 
+  select(-c(asribm01, asribm02, asribm03, asribm04, asribm05, read_ach_lvl))
 
-# identify vars that has more than 2 levels
-level_morethan2 <- sapply(T15_USA_df_stu_clean, nlevels) > 2
-level_morethan2[12:13] <- c(FALSE, FALSE) ##make it FALSE for two variables c("asbg06a", "asbg06b"), because they are better to stay as factors
+# identify vars that has more than 2 levels (to turn as numeric later)
+level_morethan2 <- sapply(P15_USA_df_stu_tch_clean, nlevels) > 2
+# note that later i'll have to go through all the variable levels to make sure it makes sense to convert vars that has more than 2 levels into numeric (e.g. in TIMSS G4, there are two vars c("asbg06a", "asbg06b") that asks students the origin of their parents, to which one of the level is "i don't know", so for those vars, it is better to have them stay as factors.
 
 
-T15_USA_df_stu_clean2 <- T15_USA_df_stu_clean[, level_morethan2] %>% 
+P15_USA_df_clean <- P15_USA_df_stu_tch_clean[, level_morethan2] %>% 
   # transform some variables into numeric
   mutate_all(as.numeric) %>% 
-  bind_cols(T15_USA_df_stu_clean[, !level_morethan2])
+  bind_cols(P15_USA_df_stu_tch_clean[, !level_morethan2])
 
 # check the missing rate for each variable, just in case
-colMeans(is.na(T15_USA_df_stu_clean)) %>% sum()
+colMeans(is.na(P15_USA_df_clean)) %>% sum()
+
+# Pre-process (e.g. rescale and center) Note that here all predictors should actullay be in likert scale, though some are in 2 levels, and some oar 3, or 4 levels. I think it's best to pre-process them anyway
+#yl : not working for now
+# P15_USA_df_clean_processed <- preProcess(P15_USA_df_clean, 
+#                               method = c("center", "scale"))
+            #"nzv"
+
+nzv <- nearZeroVar(P15_USA_df_clean, freqCut = 95/5)
+P15_USA_df_clean <- P15_USA_df_clean[,-c(nzv)]
 
 
-### Create traing and test data sets -----
+### Model building - data split -----
 set.seed(123)
-testIndex <- createDataPartition(T15_USA_df_stu_clean2$math_ach_lvl_atabv4, p = 0.7, list = FALSE)
-test <- T15_USA_df_stu_clean2[testIndex, ]
-training <- T15_USA_df_stu_clean2[-testIndex, ]
+trainingIndex <- createDataPartition(P15_USA_df_clean$read_ach_lvl_atabv4, p = 0.8, list = FALSE)
+training <- P15_USA_df_clean[trainingIndex, ]
+test <- P15_USA_df_clean[-trainingIndex, ]
 
 
-### Random Forest (there are missing values)-----
+
+
+### Decision Tree (CART) -----
+dtree_fit <- train(read_ach_lvl_atabv4 ~., 
+                   data = training, 
+                   method = "rpart")
+                   #trControl=trainControl(method="oob", number=25),
+                   #tuneLength = 10, 
+                   #parms=list(split='information')
+
+dtree_fit
+
+# Apply the model to the test set
+test_pred <- predict(dtree_fit, test)
+# See the accuracy of the model
+confusionMatrix(table(test_pred , test$read_ach_lvl_atabv4 ))
+                   
+### AdaBoost -----
+adaboost <- train(read_ach_lvl_atabv4 ~., 
+                   data = training, 
+                   method = "adaboost")
+#trControl=trainControl(method="oob", number=25),
+#tuneLength = 10, 
+#parms=list(split='information')
+
+adaboost
+
+# Apply the model to the test set
+test_pred <- predict(adaboost, test)
+# See the accuracy of the model
+confusionMatrix(table(test_pred , test$read_ach_lvl_atabv4 ))
+
+
+
+### Nerual network -----
+
+### Random Forest -----
 set.seed(123)
 mtry <- sqrt(ncol(T15_USA_df_stu_clean2) - 1) 
 #mtry <- 16 #could do fine tuning to find the optimal mtry value
