@@ -79,32 +79,37 @@ includeVar <- includeVar[!includeVar %in% excludeVar]
 
 # 3. Reformat outcome variable ====== 
 # define variable names for Y
-read_ach_lvl <- c("asribm01", "asribm02", "asribm03", "asribm04", "asribm05")
+read_ach_lvl <- c("rrea")
 
 # get the df using listwise deletion of the omitted levels
 P15_USA_df_stu_tch <- getData(data = P15_USA, varnames = c(includeVar, read_ach_lvl),
                                           omittedLevels = FALSE, addAttributes = TRUE)
 
+
+
 ### Define Y, process the dataset before modelling -----
 ### Y would be the majority vote of asribm01-05
 P15_USA_df_stu_tch <- P15_USA_df_stu_tch %>% 
-  mutate(asribm01 = as.numeric(asribm01),
-         asribm02 = as.numeric(asribm02),
-         asribm03 = as.numeric(asribm03),
-         asribm04 = as.numeric(asribm04),
-         asribm05 = as.numeric(asribm05))
+  mutate(asrrea01 = as.numeric(asrrea01),
+         asrrea02 = as.numeric(asrrea02),
+         asrrea03 = as.numeric(asrrea03),
+         asrrea04 = as.numeric(asrrea04),
+         asrrea05 = as.numeric(asrrea05))
 
+al <- as.numeric(getAttributes(P15_USA,'achievementLevels'))
 P15_USA_df_stu_tch_clean <- P15_USA_df_stu_tch %>% 
   # create new variable math_ach_lvl which is the mode of all asmibm01-05
-  rowwise() %>% 
-  summarize(read_ach_lvl = round((asribm01 + asribm02 + asribm03 + asribm04 +asribm05)/5, digits = 0)) %>% 
-  ungroup() %>% 
-  bind_cols(P15_USA_df_stu_tch) %>% 
+  mutate(read_ach_lvl = round((asrrea01 + asrrea02 + asrrea03 + asrrea04 +asrrea05)/5, digits = 0)) %>% 
   # create dummy version of math_ach_lvl
-  mutate(read_ach_lvl_atabv4 = ifelse(read_ach_lvl %in% c(4,5), 1, 0),
+  mutate(read_ach_lvl_atabv4 = ifelse(read_ach_lvl >= al[3], 1, 0),
          read_ach_lvl_atabv4 = as.factor(read_ach_lvl_atabv4)) %>% 
-  select(-c(asribm01, asribm02, asribm03, asribm04, asribm05, read_ach_lvl))
+  select(-c(asrrea01, asrrea02, asrrea03, asrrea04, asrrea05, read_ach_lvl))
 
+
+# Check whether Y is balanced or not:
+table(P15_USA_df_stu_tch_clean$read_ach_lvl_atabv4)
+# 0    1 
+# 2093 2332
 # identify vars that has more than 2 levels (to turn as numeric later)
 level_morethan2 <- sapply(P15_USA_df_stu_tch_clean, nlevels) > 2
 # note that later i'll have to go through all the variable levels to make sure it makes sense to convert vars that has more than 2 levels into numeric (e.g. in TIMSS G4, there are two vars c("asbg06a", "asbg06b") that asks students the origin of their parents, to which one of the level is "i don't know", so for those vars, it is better to have them stay as factors.
