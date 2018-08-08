@@ -82,8 +82,8 @@ includeVar <- includeVar[!includeVar %in% excludeVar]
 read_ach_lvl <- c("asribm01", "asribm02", "asribm03", "asribm04", "asribm05")
 
 # get the df using listwise deletion of the omitted levels
-P15_USA_df_stu_tch <- getData(data = P15_USA, varnames = c(missing_rate_less0.1_stu_tch, read_ach_lvl),
-                                          omittedLevels = TRUE, addAttributes = TRUE)
+P15_USA_df_stu_tch <- getData(data = P15_USA, varnames = c(includeVar, read_ach_lvl),
+                                          omittedLevels = FALSE, addAttributes = TRUE)
 
 ### Define Y, process the dataset before modelling -----
 ### Y would be the majority vote of asribm01-05
