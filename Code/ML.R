@@ -10,10 +10,10 @@
 #install.packages("EdSurvey")
 devtools::load_all("U:/ESSIN Task 14/NAEP R Program/Yuqi/edsurvey")
 
-#install.packages("modeest")
-#install.packages("randomForest")
-#install.packages("e1071")
-#install.packages("gbm")
+# install.packages("modeest")
+# install.packages("randomForest")
+# install.packages("e1071")
+# install.packages("gbm")
 
 library(gbm)
 library(dplyr)
@@ -23,32 +23,61 @@ library(randomForest)
 library(e1071)
 
 
-### Download/Read in -----
+### 1. Download/Read in -----
 #downloadTIMSS(year=2015, root = "/Users/Yuqi/Desktop/Files/AIR/Machine learning/Data")
 #T15_USA <- readTIMSS("G:/Conference/2019/Data/TIMSS/TIMSS2015", countries = c("usa"), gradeLvl = "4")
 P15_USA <- readPIRLS("./Data/PIRLS/P16_and_PL16_Data", countries = c("usa"))
 
+# for Trang
+datapath = "G:/01-EdSurvey (start 06-19)/PIRLS"
+P15_USA <- readPIRLS(file.path(datapath,2016), countries='usa',verbose=TRUE)
 
-### calculate missing rate and decide on which variables to use
+
+### 2. Select relevant variables =======
 # read in everything (in the student file and the teacher file) first
 student_teacher_var <- tolower(union(P15_USA$fileFormat$variableName, P15_USA$fileFormatTeacher$variableName))
 P15_USA_df <- getData(data = P15_USA, varnames = student_teacher_var,
                       omittedLevels = FALSE, addAttributes = TRUE)
 
 # calculate missing rate
-missing_rate <- colMeans(is.na(P15_USA_df)) 
 
+missing_rule <- function(x, omittedLevels) {
+  return(sapply(x, function(i) {
+    ifelse(is.na(i) | i %in% omittedLevels,1,0)
+  }))
+}
+
+om <- getAttributes(P15_USA_df,"omittedLevels")
+missing_rate <- sapply(colnames(P15_USA_df),
+                       function(i) {
+                         mean(missing_rule(P15_USA_df[,i],om))
+                       })
 # keep variabels that has missing rate < 0.1
 missing_rate_less0.1 <- missing_rate[missing_rate < 0.1]
 names(missing_rate_less0.1)
 
 # exclude variables that are weights, ids (except for itsex), pvs, (and vars taht are derived from questionnaire items), as were done in the TIMSS paper
-stuVarCols <- c(9, 51:115) #9 is itsex, accordingly "asbg01" (boy/girl) is excluded
-tchVarCols <- c(290:416) 
-stu_tch_VarCols <- c(stuVarCols, tchVarCols)
+includeVar <- grep("^jk|wgt|asbg01|^id",names(missing_rate_less0.1), value = TRUE, invert = TRUE)
+# stuVarCols <- c(9, 51:115) #9 is itsex, accordingly "asbg01" (boy/girl) is excluded
+# tchVarCols <- c(290:416)
+# stu_tch_VarCols <- c(stuVarCols, tchVarCols)
+# 
+# missing_rate_less0.1_stu_tch <- names(missing_rate_less0.1[stu_tch_VarCols])
 
-missing_rate_less0.1_stu_tch <- names(missing_rate_less0.1[stu_tch_VarCols])
+# Remove plausible values from includeVar
+pvvars <- getAttributes(P15_USA,'pvvars')
+pvvars <- unlist(lapply(pvvars, function(p) p$varnames))
+includeVar <- includeVar[!includeVar %in% pvvars]
 
+# check codebook of included variables
+codebook <- showCodebook(P15_USA)
+codebook <- codebook[tolower(codebook$variableName) %in% includeVar,]
+
+# after looking at the codebook, exclude some variables
+excludeVar <- c("version","scope","itadmini")
+includeVar <- includeVar[!includeVar %in% excludeVar]
+
+# 3. Reformat outcome variable ====== 
 # define variable names for Y
 read_ach_lvl <- c("asribm01", "asribm02", "asribm03", "asribm04", "asribm05")
 
