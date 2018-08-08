@@ -46,8 +46,12 @@ names(missing_rate_less0.1)
 stuVarCols <- c(9, 51:115) #9 is itsex, accordingly "asbg01" (boy/girl) is excluded
 tchVarCols <- c(290:416) 
 stu_tch_VarCols <- c(stuVarCols, tchVarCols)
-
+techer_weight <- 577
+student_weight <- 576
+stu_tch_VarCols_plusWeight <-  c(stuVarCols, tchVarCols, techer_weight)
+  
 missing_rate_less0.1_stu_tch <- names(missing_rate_less0.1[stu_tch_VarCols])
+missing_rate_less0.1_stu_tch_weight <- names(missing_rate_less0.1[stu_tch_VarCols_plusWeight])
 
 # define variable names for Y
 read_ach_lvl <- c("asribm01", "asribm02", "asribm03", "asribm04", "asribm05")
@@ -55,6 +59,8 @@ read_ach_lvl <- c("asribm01", "asribm02", "asribm03", "asribm04", "asribm05")
 # get the df using listwise deletion of the omitted levels
 P15_USA_df_stu_tch <- getData(data = P15_USA, varnames = c(missing_rate_less0.1_stu_tch, read_ach_lvl),
                                           omittedLevels = TRUE, addAttributes = TRUE)
+P15_USA_df_stu_tch_weight <- getData(data = P15_USA, varnames = c(missing_rate_less0.1_stu_tch_weight, read_ach_lvl),
+                              omittedLevels = TRUE, addAttributes = TRUE)
 
 ### Define Y, process the dataset before modelling -----
 ### Y would be the majority vote of asribm01-05
@@ -76,35 +82,76 @@ P15_USA_df_stu_tch_clean <- P15_USA_df_stu_tch %>%
          read_ach_lvl_atabv4 = as.factor(read_ach_lvl_atabv4)) %>% 
   select(-c(asribm01, asribm02, asribm03, asribm04, asribm05, read_ach_lvl))
 
-# identify vars that has more than 2 levels (to turn as numeric later)
-level_morethan2 <- sapply(P15_USA_df_stu_tch_clean, nlevels) > 2
-# note that later i'll have to go through all the variable levels to make sure it makes sense to convert vars that has more than 2 levels into numeric (e.g. in TIMSS G4, there are two vars c("asbg06a", "asbg06b") that asks students the origin of their parents, to which one of the level is "i don't know", so for those vars, it is better to have them stay as factors.
+P15_USA_df_stu_tch_weight <- P15_USA_df_stu_tch_weight %>% 
+  mutate(asribm01 = as.numeric(asribm01),
+         asribm02 = as.numeric(asribm02),
+         asribm03 = as.numeric(asribm03),
+         asribm04 = as.numeric(asribm04),
+         asribm05 = as.numeric(asribm05))
+
+P15_USA_df_stu_tch_weight_clean <- P15_USA_df_stu_tch_weight %>% 
+  # create new variable math_ach_lvl which is the mode of all asmibm01-05
+  rowwise() %>% 
+  summarize(read_ach_lvl = round((asribm01 + asribm02 + asribm03 + asribm04 +asribm05)/5, digits = 0)) %>% 
+  ungroup() %>% 
+  bind_cols(P15_USA_df_stu_tch_weight) %>% 
+  # create dummy version of math_ach_lvl
+  mutate(read_ach_lvl_atabv4 = ifelse(read_ach_lvl %in% c(4,5), 1, 0),
+         read_ach_lvl_atabv4 = as.factor(read_ach_lvl_atabv4)) %>% 
+  select(-c(asribm01, asribm02, asribm03, asribm04, asribm05, read_ach_lvl))
+
+P15_USA_df_stu_tch_weight_clean <- P15_USA_df_stu_tch_weight_clean %>% 
+  select(-(contains("jk.tchwgt")))
 
 
-P15_USA_df_clean <- P15_USA_df_stu_tch_clean[, level_morethan2] %>% 
-  # transform some variables into numeric
-  mutate_all(as.numeric) %>% 
-  bind_cols(P15_USA_df_stu_tch_clean[, !level_morethan2])
+# turn every variable (except for the outcome variable) into numeric?
+P15_USA_df_stu_tch_clean_numeric <- P15_USA_df_stu_tch_clean %>% 
+  mutate_at(.funs = funs(as.numeric), .vars = colnames(P15_USA_df_stu_tch_clean)[!colnames(P15_USA_df_stu_tch_clean) %in% c("read_ach_lvl_atabv4")])
 
-# check the missing rate for each variable, just in case
-colMeans(is.na(P15_USA_df_clean)) %>% sum()
+P15_USA_df_stu_tch_weight_clean_numeric <- P15_USA_df_stu_tch_weight_clean %>% 
+  mutate_at(.funs = funs(as.numeric), .vars = colnames(P15_USA_df_stu_tch_weight_clean)[!colnames(P15_USA_df_stu_tch_weight_clean) %in% c("read_ach_lvl_atabv4")])
+
+
+
+
+
+### Model building - preProcess -----
+# # identify vars that has more than 2 levels (to turn as numeric later)
+# level_morethan2 <- sapply(P15_USA_df_stu_tch_clean, nlevels) > 2
+# # note that later i'll have to go through all the variable levels to make sure it makes sense to convert vars that has more than 2 levels into numeric (e.g. in TIMSS G4, there are two vars c("asbg06a", "asbg06b") that asks students the origin of their parents, to which one of the level is "i don't know", so for those vars, it is better to have them stay as factors.
+# 
+# 
+# P15_USA_df_clean <- P15_USA_df_stu_tch_clean[, level_morethan2] %>% 
+#   # transform some variables into numeric
+#   mutate_all(as.numeric) %>% 
+#   bind_cols(P15_USA_df_stu_tch_clean[, !level_morethan2])
+
+# # check the missing rate for each variable, just in case
+# colMeans(is.na(P15_USA_df_stu_tch_weight_clean)) %>% sum()
 
 # Pre-process (e.g. rescale and center) Note that here all predictors should actullay be in likert scale, though some are in 2 levels, and some oar 3, or 4 levels. I think it's best to pre-process them anyway
 #yl : not working for now
-# P15_USA_df_clean_processed <- preProcess(P15_USA_df_clean, 
-#                               method = c("center", "scale"))
-            #"nzv"
+process_configuration <- preProcess(P15_USA_df_stu_tch_clean_numeric,
+                                    method = c("nzv","center", "scale"))
+processed <- predict(process_configuration, P15_USA_df_stu_tch_clean_numeric)
 
-nzv <- nearZeroVar(P15_USA_df_clean, freqCut = 95/5)
-P15_USA_df_clean <- P15_USA_df_clean[,-c(nzv)]
 
+process_configuration <- preProcess(P15_USA_df_stu_tch_weight_clean_numeric,
+                                    method = c("nzv","center", "scale"))
+processed_wight <- predict(process_configuration, P15_USA_df_stu_tch_weight_clean_numeric)
+
+# nzv <- nearZeroVar(P15_USA_df_clean, freqCut = 95/5)
+# P15_USA_df_clean <- P15_USA_df_clean[,-c(nzv)]
 
 ### Model building - data split -----
-set.seed(123)
-trainingIndex <- createDataPartition(P15_USA_df_clean$read_ach_lvl_atabv4, p = 0.8, list = FALSE)
-training <- P15_USA_df_clean[trainingIndex, ]
-test <- P15_USA_df_clean[-trainingIndex, ]
 
+set.seed(123)
+trainingIndex <- createDataPartition(processed$read_ach_lvl_atabv4, p = 0.8, list = FALSE)
+training <- P15_USA_df_stu_tch_clean_numeric[trainingIndex, ]
+test <- P15_USA_df_stu_tch_clean_numeric[-trainingIndex, ]
+
+training_weight <- P15_USA_df_stu_tch_weight_clean_numeric[trainingIndex, ]
+test_weight <- P15_USA_df_stu_tch_weight_clean_numeric[-trainingIndex, ]
 
 
 
@@ -122,7 +169,29 @@ dtree_fit
 test_pred <- predict(dtree_fit, test)
 # See the accuracy of the model
 confusionMatrix(table(test_pred , test$read_ach_lvl_atabv4 ))
-                   
+
+### Decision Tree (CART) - with weight -----
+dtree_fit_weight <- train(read_ach_lvl_atabv4 ~., 
+                   data = training_weight, 
+                   method = "rpart",
+                   weights = tchwgt)
+#trControl=trainControl(method="oob", number=25),
+#tuneLength = 10, 
+#parms=list(split='information')
+
+dtree_fit_weight
+
+# Apply the model to the test set
+test_pred <- predict(dtree_fit_weight, test_weight)
+# See the accuracy of the model
+confusionMatrix(table(test_pred , test_weight$read_ach_lvl_atabv4 ))
+
+
+
+
+
+
+
 ### AdaBoost -----
 adaboost <- train(read_ach_lvl_atabv4 ~., 
                    data = training, 
@@ -143,10 +212,8 @@ confusionMatrix(table(test_pred , test$read_ach_lvl_atabv4 ))
 ### Nerual network -----
 
 ### Random Forest -----
-set.seed(123)
-mtry <- sqrt(ncol(T15_USA_df_stu_clean2) - 1) 
-#mtry <- 16 #could do fine tuning to find the optimal mtry value
-rf <- train(math_ach_lvl_atabv4~., 
+mtry <- sqrt(ncol(training) - 1) 
+rf <- train(read_ach_lvl_atabv4~., 
              data=training, 
              method="rf", 
              metric="Accuracy", 
@@ -159,10 +226,8 @@ print(rf)
 
 # Apply the model to the test set
 test_pred <- predict(rf, test)
-# See the accuracy of the model
-table(test_pred, test$math_ach_lvl_atabv4)/nrow(test)
 # Use confusionMatrix
-confusionMatrix(table(test_pred , test$math_ach_lvl_atabv4 ))
+confusionMatrix(table(test_pred , test$read_ach_lvl_atabv4 ))
 
 
 # Variable importance
@@ -173,35 +238,64 @@ top20_plot <- plot(varImp(rf), top = 20)
 top20_varName <- as.character(top20_plot$panel.args[[1]]$y)
 
 
-# Create new RF models with the top variables
-data_top20 <- T15_USA_df_stu_clean %>% 
-  select(CHRONIC_ABSENTEE,
-         top20_varName)
-set.seed(123)
-testIndex <- createDataPartition(data_top20$CHRONIC_ABSENTEE, p = 0.8, list = FALSE)
-training <- data_top20[-testIndex, ]
-test <- data_top20[testIndex, ]
+# # Create new RF models with the top variables
+# data_top20 <- T15_USA_df_stu_clean %>% 
+#   select(CHRONIC_ABSENTEE,
+#          top20_varName)
+# set.seed(123)
+# testIndex <- createDataPartition(data_top20$CHRONIC_ABSENTEE, p = 0.8, list = FALSE)
+# training <- data_top20[-testIndex, ]
+# test <- data_top20[testIndex, ]
+# 
+# # Create model
+# mtry <- sqrt(ncol(data_top10) - 1) 
+# #mtry <- 16 #could do fine tuning to find the optimal mtry value
+# rf_CHRONIC_ABSENTEE_top10 <- train(CHRONIC_ABSENTEE~., 
+#                                    data=training, 
+#                                    method="rf", 
+#                                    metric="Accuracy", 
+#                                    tuneGrid=expand.grid(.mtry=mtry), 
+#                                    trControl=trainControl(method="oob", number=25),
+#                                    #default to be 500
+#                                    ntree = 1000)
+# print(rf_CHRONIC_ABSENTEE_top10)
+# 
+# # Apply the model to the test set
+# test_pred <- predict(rf_CHRONIC_ABSENTEE_top10, test)
+# # Use confusionMatrix
+# confusion_matrix_top10 <- confusionMatrix(table(test_pred , test$CHRONIC_ABSENTEE ))
 
-# Create model
-mtry <- sqrt(ncol(data_top10) - 1) 
-#mtry <- 16 #could do fine tuning to find the optimal mtry value
-rf_CHRONIC_ABSENTEE_top10 <- train(CHRONIC_ABSENTEE~., 
-                                   data=training, 
-                                   method="rf", 
-                                   metric="Accuracy", 
-                                   tuneGrid=expand.grid(.mtry=mtry), 
-                                   trControl=trainControl(method="oob", number=25),
-                                   #default to be 500
-                                   ntree = 1000)
-print(rf_CHRONIC_ABSENTEE_top10)
+
+### Random Forest - with weights -----
+mtry <- sqrt(ncol(training) - 1) 
+rf_weight <- train(read_ach_lvl_atabv4~., 
+            data=training_weight, 
+            method="rf", 
+            metric="Accuracy", 
+            tuneGrid=expand.grid(.mtry=mtry), 
+            trControl=trainControl(method="oob", number=25),
+            #default to be 500
+            ntree = 500)
+print(rf_weight)
+
 
 # Apply the model to the test set
-test_pred <- predict(rf_CHRONIC_ABSENTEE_top10, test)
+test_pred_weight <- predict(rf_weight, test_weight)
 # Use confusionMatrix
-confusion_matrix_top10 <- confusionMatrix(table(test_pred , test$CHRONIC_ABSENTEE ))
+confusionMatrix(table(test_pred_weight , test_weight$read_ach_lvl_atabv4 ))
 
 
+# Variable importance
+# top 20 most important variables
+varImp(rf_weight) #"scale = TRUE" is the default
+top20_plot_weight <- plot(varImp(rf_weight), top = 20)
+# get the names of the top 20 variables
+top20_varName_weight <- as.character(top20_plot_weight$panel.args[[1]]$y)
 
+
+#find intersection
+intersect(top20_varName, top20_varName_weight)
+setdiff(top20_varName, top20_varName_weight)
 
 ############## GBM (Gradient Boosted Machines) /XGBoost ##############
 #build a GBM model (Y = math_ach_lvl_atabv4)
