@@ -82,10 +82,10 @@ includeVar <- includeVar[!includeVar %in% excludeVar]
 read_ach_lvl <- c("rrea")
 
 # get the df using listwise deletion of the omitted levels
-P15_USA_df_stu_tch <- getData(data = P15_USA, varnames = c(includeVar, read_ach_lvl),
+P15_USA_df_stu_tch <- getData(data = P15_USA, varnames = c(includeVar, read_ach_lvl,'tchwgt'),
                                           omittedLevels = FALSE, addAttributes = TRUE)
 
-
+P15_USA_df_stu_tch <- P15_USA_df_stu_tch[,~grep("^jk",colnames(P15_USA_df_stu_tch),value=TRUE)]
 
 ### Define Y, process the dataset before modelling -----
 ### Y would be the majority vote of asribm01-05
@@ -133,7 +133,8 @@ nzv <- nearZeroVar(P15_USA_df_clean, freqCut = 95/5)
 P15_USA_df_clean <- P15_USA_df_clean[,-c(nzv)]
 
 
-### Model building - data split -----
+### 4. Model building - data split -----
+library(caret)
 set.seed(123)
 trainingIndex <- createDataPartition(P15_USA_df_clean$read_ach_lvl_atabv4, p = 0.8, list = FALSE)
 training <- P15_USA_df_clean[trainingIndex, ]
