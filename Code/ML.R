@@ -1,6 +1,6 @@
 ## Machine learning with ILSA
 ## Yuqi Liao & Trang Nguyen
-## 07/21/2018
+## 08/29/2018
 
 ### Ideas dump -----
 # we could try to use the US restrict-use files to include more US variables!
@@ -10,6 +10,13 @@
 # RQ1: Could machine learning algorithms be better than logistic regressions in predicting student outcome?
 # RQ2: What variables could best predict student outcome (achieving the “high” reading proficiency level, or NOT achieving the proficiency level)?
 # RQ3: Among students with low proficiency levels, what are the characteristics?
+
+## paraphrased below
+# the analysis could show how ML could be applied in ILSA data. in particular, the goals are 
+# 1. to create a model which could successfully identify/predict low-performing students using information from STUDENT, Teacher, and Principal questionanires (focus on prediction accuracy/recall or a specific metric)
+# 2. identify variables that have the most predictive power (so the policy implication would be that school should focus more on those variables to help low-performing students)
+# 3. within low-performing students, cluster them to see if there are some usual patterns
+
 
 ### Set things up -----
 
@@ -31,116 +38,126 @@ library(e1071)
 
 ### Download data
 #downloadTIMSS(year=2015, root = "/Users/Yuqi/Desktop/Files/AIR/Machine learning/Data")
-#T15_USA <- readTIMSS("G:/Conference/2019/Data/TIMSS/TIMSS2015", countries = c("usa"), gradeLvl = "4")
-P15_USA <- readPIRLS("./Data/PIRLS/P16_and_PL16_Data", countries = c("usa"))
+T15_USA_G4 <- readTIMSS("G:/Conference/2019/Data/TIMSS/TIMSS2015", countries = c("usa"), gradeLvl = "4")
+T15_USA_G8 <- readTIMSS("G:/Conference/2019/Data/TIMSS/TIMSS2015", countries = c("usa"), gradeLvl = "8")
+#P15_USA <- readPIRLS("./Data/PIRLS/P16_and_PL16_Data", countries = c("usa"))
 
 ### Read in (1st time) to find out missing rate
 # calculate missing rate and decide on which variables to use
 # read in everything (in the student file and the teacher file) first
-student_teacher_var <- tolower(union(P15_USA$fileFormat$variableName, P15_USA$fileFormatTeacher$variableName))
-P15_USA_df <- getData(data = P15_USA, varnames = student_teacher_var,
+#student_teacher_var_G4 <- tolower(union(T15_USA_G4$fileFormat$variableName, T15_USA_G4$fileFormatTeacher$variableName))
+student_school_var_G4 <- tolower(union(T15_USA_G4$fileFormat$variableName, T15_USA_G4$fileFormatSchool$variableName))
+#student_teacher_var_G8 <- tolower(union(T15_USA_G8$fileFormat$variableName, T15_USA_G8$fileFormatTeacher$variableName))
+student_school_var_G8 <- tolower(union(T15_USA_G8$fileFormat$variableName, T15_USA_G8$fileFormatSchool$variableName))
+##YL: discuss with Trang: in the TIMSS paper, it merges G4 student and teacher data together (for Korea), which make the n of rows increase from 4334 to 4771 (because for some students there are more than one teachers). The paper then "This study kept the first observation of the duplicates, which resulted in the original number of 4,334 observations with a total of 586 variables." I think it is a bit problematic. Do you agree? In the same logic, I think it's best not to merge student with teacher variables. I then merge student with school variables, so the number of rows does not increase (becuase each student only has one school principle)
+
+T15_USA_G4_df <- getData(data = T15_USA_G4, varnames = student_school_var_G4,
                       omittedLevels = FALSE, addAttributes = TRUE)
+T15_USA_G8_df <- getData(data = T15_USA_G8, varnames = student_school_var_G8,
+                         omittedLevels = FALSE, addAttributes = TRUE)
+
+# Use G8 data as a start
+T15_USA_df <- T15_USA_G8_df
 
 # calculate missing rate
-missing_rate <- colMeans(is.na(P15_USA_df)) 
+#original method
+missing_rate <- colMeans(is.na(T15_USA_df)) 
+
+#method inspired by Trang
+missing_rule <- function(x, omittedLevels) {
+  return(sapply(x, function(i) {
+    ifelse(is.na(i) | i %in% omittedLevels,1,0)
+  }))
+}
+om <- getAttributes(T15_USA_df,"omittedLevels")
+
+missing_rate_new <- colMeans(missing_rule(T15_USA_df,om))
+
+summary(missing_rate)
+summary(missing_rate_new) ##YL: confirm with Trang #though they seem to be the same, i think my code is correct, it should be just that there the omittedlevels do not exist in the data frame, it may exist elsewhere in the teacher data or in the assessment data? 
+
+##YL: also I think Trang's code below is not correct?
+missing_rate <- sapply(colnames(P15_USA_df),
+                       function(i) {
+                         mean(missing_rule(P15_USA_df[,i],om))
+                       })
+missing_rate <- sapply(colnames(P15_USA_df),
+                       function(i) {
+                         mean(missing_rule(P15_USA_df[,i],om))
+                       })
+
 
 # keep variabels that has missing rate < 0.1
 missing_rate_less0.1 <- missing_rate[missing_rate < 0.1]
 names(missing_rate_less0.1)
 
 # exclude variables that are weights, ids (except for itsex), pvs, (and vars taht are derived from questionnaire items), as were done in the TIMSS paper
-stuVarCols <- c(9, 51:115) #9 is itsex, accordingly "asbg01" (boy/girl) is excluded
-tchVarCols <- c(290:416) 
-stu_tch_VarCols <- c(stuVarCols, tchVarCols)
-# variable names for Y (changed from using 5 plausible proficiency levels to using 5 reading PVs)
-#read_ach_lvl <- c("asribm01", "asribm02", "asribm03", "asribm04", "asribm05")
-read_pv <- "rrea"
-
+# stuVarCols <- c(9, 51:115) #9 is itsex, accordingly "asbg01" (boy/girl) is excluded
+# tchVarCols <- c(290:416) 
+# stu_tch_VarCols <- c(stuVarCols, tchVarCols)
+# # variable names for Y (changed from using 5 plausible proficiency levels to using 5 reading PVs)
+# #read_ach_lvl <- c("asribm01", "asribm02", "asribm03", "asribm04", "asribm05")
+# read_pv <- "rrea"
 # # try with weight
 # techer_weight <- 577
 # student_weight <- 576
 # stu_tch_VarCols_plusWeight <-  c(stuVarCols, tchVarCols, techer_weight)
-  
-missing_rate_less0.1_stu_tch <- names(missing_rate_less0.1[stu_tch_VarCols])
-#missing_rate_less0.1_stu_tch_weight <- names(missing_rate_less0.1[stu_tch_VarCols_plusWeight])
 
 
-### Read in (2nd time) to have all right-hand-site variables needed for the model
+includeVar <- grep("^jk|wgt|^id|^ita|^bsdg|^bcdg",names(missing_rate_less0.1), value = TRUE, invert = TRUE) ##for a series of derived variables that have both scale and index versions, "^bsdg|^bcdg" is to drop the index version (cuz otherwise they are highly colinear)
+#YL: for G8, a lot of background quesitons have both sci and math versions, should I be concerned that they are highly correlated with each other?
+
+# Remove plausible values from includeVar
+pvvars <- getAttributes(T15_USA_df,'pvvars')
+pvvars <- unlist(lapply(pvvars, function(p) p$varnames))
+includeVar <- includeVar[!includeVar %in% pvvars]
+
+# check codebook of included variables
+codebook <- showCodebook(T15_USA_df)
+codebook <- codebook[tolower(codebook$variableName) %in% includeVar,]
+
+# after looking at the codebook, exclude some variables
+excludeVar <- c("ilreliab","version","bsbg01", "itlang", "bsdmlowp", "bsdslowp") #exclude "itlang" cuz the US only has one level
+includeVar <- includeVar[!includeVar %in% excludeVar]
+
+### Read in (2nd time) to have all right-hand-site variables needed for the model=====
+# Reformat outcome variable # define variable names for Y
+math_ach_lvl <- c("mmat")
+
 # get the df using listwise deletion of the omitted levels
-P15_USA_df_stu_tch <- getData(data = P15_USA, varnames = c(missing_rate_less0.1_stu_tch, read_pv),
-                                          omittedLevels = TRUE, addAttributes = TRUE)
-# P15_USA_df_stu_tch_weight <- getData(data = P15_USA, varnames = c(missing_rate_less0.1_stu_tch_weight, read_ach_lvl),
-#                               omittedLevels = TRUE, addAttributes = TRUE)
-
-### Define Y
-# # Y would be the majority vote of asribm01-05
-# P15_USA_df_stu_tch <- P15_USA_df_stu_tch %>%
-#   mutate(asribm01 = as.numeric(asribm01),
-#          asribm02 = as.numeric(asribm02),
-#          asribm03 = as.numeric(asribm03),
-#          asribm04 = as.numeric(asribm04),
-#          asribm05 = as.numeric(asribm05))
-
-# first get the average of asrrea01-05, and create a new variable to document the proficiency level of that average
-al <- as.numeric(getAttributes(P15_USA,'achievementLevels'))
-P15_USA_df_stu_tch <- P15_USA_df_stu_tch %>%
-  mutate(asrrea_mean = (asrrea01 + asrrea02 + asrrea03 + asrrea04 + asrrea05)/5,
-         #read_ach_lvl_atabv4 = ifelse(asrrea_mean >= al[3], 1, 0),
-         #read_ach_lvl_atabv4 = as.factor(read_ach_lvl_atabv4),
-         read_ach_lvl_blwhigh = ifelse(asrrea_mean < al[3], 1, 0),
-         read_ach_lvl_blwhigh = as.factor(read_ach_lvl_blwhigh)) %>% 
-  select(-c(asrrea01, asrrea02, asrrea03, asrrea04, asrrea05, asrrea_mean))
-summary(P15_USA_df_stu_tch_1$read_ach_lvl_blwhigh)
+T15_USA_df_stu_sch <- getData(data = T15_USA_df, varnames = c(includeVar, math_ach_lvl),
+                              omittedLevels = TRUE, addAttributes = TRUE)
 
 
 
-# P15_USA_df_stu_tch_clean <- P15_USA_df_stu_tch %>% 
-#   # create new variable math_ach_lvl which is the mode of all asmibm01-05
-#   rowwise() %>% 
-#   summarize(read_ach_lvl = round((asribm01 + asribm02 + asribm03 + asribm04 +asribm05)/5, digits = 0)) %>% 
-#   ungroup() %>% 
-#   bind_cols(P15_USA_df_stu_tch) %>% 
-#   # create dummy version of math_ach_lvl
-#   mutate(read_ach_lvl_atabv4 = ifelse(read_ach_lvl %in% c(4,5), 1, 0),
-#          read_ach_lvl_atabv4 = as.factor(read_ach_lvl_atabv4)) %>% 
-#   select(-c(asribm01, asribm02, asribm03, asribm04, asribm05, read_ach_lvl))
+# first get the average of bsmmat01-05, and create a new variable to document the proficiency level of that average
+al <- as.numeric(getAttributes(T15_USA_df,'achievementLevels'))
+T15_USA_df_stu_sch_clean <- T15_USA_df_stu_sch %>%
+  mutate(bsmmat_mean = (bsmmat01 + bsmmat02 + bsmmat03 + bsmmat04 + bsmmat05)/5,
+         math_ach_lvl_blwhigh = ifelse(bsmmat_mean < al[2], 1, 0),
+         math_ach_lvl_blwhigh = as.factor(math_ach_lvl_blwhigh)) %>% 
+  select(-c(bsmmat01, bsmmat02, bsmmat03, bsmmat04, bsmmat05, bsmmat_mean))
 
-# ### try with weight
-# P15_USA_df_stu_tch_weight <- P15_USA_df_stu_tch_weight %>% 
-#   mutate(asribm01 = as.numeric(asribm01),
-#          asribm02 = as.numeric(asribm02),
-#          asribm03 = as.numeric(asribm03),
-#          asribm04 = as.numeric(asribm04),
-#          asribm05 = as.numeric(asribm05))
-# 
-# P15_USA_df_stu_tch_weight_clean <- P15_USA_df_stu_tch_weight %>% 
-#   # create new variable math_ach_lvl which is the mode of all asmibm01-05
-#   rowwise() %>% 
-#   summarize(read_ach_lvl = round((asribm01 + asribm02 + asribm03 + asribm04 +asribm05)/5, digits = 0)) %>% 
-#   ungroup() %>% 
-#   bind_cols(P15_USA_df_stu_tch_weight) %>% 
-#   # create dummy version of math_ach_lvl
-#   mutate(read_ach_lvl_atabv4 = ifelse(read_ach_lvl %in% c(4,5), 1, 0),
-#          read_ach_lvl_atabv4 = as.factor(read_ach_lvl_atabv4)) %>% 
-#   select(-c(asribm01, asribm02, asribm03, asribm04, asribm05, read_ach_lvl))
-# 
-# P15_USA_df_stu_tch_weight_clean <- P15_USA_df_stu_tch_weight_clean %>% 
-#   select(-(contains("jk.tchwgt")))
+#check the balance of Y ##YL: I expect it to not be balanced, because we are "predicting" the low-performing students
+table(T15_USA_df_stu_sch_clean$math_ach_lvl_blwhigh)
 
 
 
 # identify vars that has more than 2 levels (to turn as numeric later)
-level_morethan2 <- sapply(P15_USA_df_stu_tch, nlevels) > 2
-# note that later i'll have to go through all the variable levels to make sure it makes sense to convert vars that has more than 2 levels into numeric (e.g. in TIMSS G4, there are two vars c("asbg06a", "asbg06b") that asks students the origin of their parents, to which one of the level is "i don't know", so for those vars, it is better to have them stay as factors.
+level_morethan2 <- sapply(T15_USA_df_stu_sch_clean, nlevels) > 2
+# note that later i'll have to go through all the variable levels to make sure it makes sense to convert vars that has more than 2 levels into numeric (e.g. in TIMSS G8, there are two vars c("bsbg09a", "bsbg09b") that asks students the origin of their parents, to which one of the level is "i don't know", so for those vars, it is better to have them stay as factors.
+level_morethan2["bsbg09a"] <- FALSE
+level_morethan2["bsbg09b"] <- FALSE
 
-P15_USA_df_clean <- P15_USA_df_stu_tch[, level_morethan2] %>%
+
+T15_USA_df_clean <- T15_USA_df_stu_sch_clean[, level_morethan2] %>%
   # transform some variables into numeric
   mutate_all(as.numeric) %>%
-  bind_cols(P15_USA_df_stu_tch[, !level_morethan2])
+  bind_cols(T15_USA_df_stu_sch_clean[, !level_morethan2])
 
 
-# P15_USA_df_stu_tch_weight_clean_numeric <- P15_USA_df_stu_tch_weight_clean %>% 
-#   mutate_at(.funs = funs(as.numeric), .vars = colnames(P15_USA_df_stu_tch_weight_clean)[!colnames(P15_USA_df_stu_tch_weight_clean) %in% c("read_ach_lvl_atabv4")])
+# check the missing rate for each variable, just in case
+colMeans(is.na(T15_USA_df_clean)) %>% sum()
 
 
 
@@ -153,35 +170,26 @@ P15_USA_df_clean <- P15_USA_df_stu_tch[, level_morethan2] %>%
 #yl : not working for now
 
 # identify and remove columns with near zero variance (otherwise the models later won't run on this constant terms)
-nzv <- nearZeroVar(P15_USA_df_clean, freqCut = 95/5)
-P15_USA_df_clean <- P15_USA_df_clean[,-c(nzv)]
+nzv <- nearZeroVar(T15_USA_df_clean, freqCut = 95/5)
+T15_USA_df_clean <- T15_USA_df_clean[,-c(nzv)]
 
-process_configuration <- preProcess(P15_USA_df_clean,
+process_configuration <- preProcess(T15_USA_df_clean,
                                     method = c("center", "scale"))
-processed <- predict(process_configuration, P15_USA_df_clean)
+processed <- predict(process_configuration, T15_USA_df_clean)
 
 
-# # try with weight
-# process_configuration <- preProcess(P15_USA_df_stu_tch_weight_clean_numeric,
-#                                     method = c("nzv","center", "scale"))
-# processed_wight <- predict(process_configuration, P15_USA_df_stu_tch_weight_clean_numeric)
 
 
 
 ### Model building - data split -----
 set.seed(123)
-trainingIndex <- createDataPartition(processed$read_ach_lvl_blwhigh, p = 0.8, list = FALSE)
+trainingIndex <- createDataPartition(processed$math_ach_lvl_blwhigh, p = 0.8, list = FALSE)
 training <- processed[trainingIndex, ]
 test <- processed[-trainingIndex, ]
 
-# # try with weights
-# training_weight <- P15_USA_df_stu_tch_weight_clean_numeric[trainingIndex, ]
-# test_weight <- P15_USA_df_stu_tch_weight_clean_numeric[-trainingIndex, ]
-
-
 
 ### Decision Tree (CART) -----
-dtree_fit <- train(read_ach_lvl_blwhigh ~., 
+dtree_fit <- train(math_ach_lvl_blwhigh ~., 
                    data = training, 
                    method = "rpart")
                    #trControl=trainControl(method="oob", number=25),
@@ -193,7 +201,7 @@ dtree_fit
 # Apply the model to the test set
 test_pred <- predict(dtree_fit, test)
 # See the accuracy of the model
-confusionMatrix(table(test_pred , test$read_ach_lvl_blwhigh ))
+confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh ))
 
 # ### Decision Tree (CART) - with weight
 # dtree_fit_weight <- train(read_ach_lvl_atabv4 ~., 
