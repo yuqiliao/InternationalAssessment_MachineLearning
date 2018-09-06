@@ -32,24 +32,22 @@ library(modeest)
 library(caret)
 library(randomForest)
 library(e1071)
+library(extraTrees)
+library(rJava)
 
-
-### Download/Read in/Create a data frame for modeling -----
+### Step 1. Read in and prepare data ==============
+### 1a. Download/Read in/Create a data frame for modeling -----
 
 ### Download data
 #downloadTIMSS(year=2015, root = "/Users/Yuqi/Desktop/Files/AIR/Machine learning/Data")
 T15_USA_G4 <- readTIMSS("G:/Conference/2019/Data/TIMSS/TIMSS2015", countries = c("usa"), gradeLvl = "4")
 T15_USA_G8 <- readTIMSS("G:/Conference/2019/Data/TIMSS/TIMSS2015", countries = c("usa"), gradeLvl = "8")
-#P15_USA <- readPIRLS("./Data/PIRLS/P16_and_PL16_Data", countries = c("usa"))
 
 ### Read in (1st time) to find out missing rate
 # calculate missing rate and decide on which variables to use
 # read in everything (in the student file and the teacher file) first
-#student_teacher_var_G4 <- tolower(union(T15_USA_G4$fileFormat$variableName, T15_USA_G4$fileFormatTeacher$variableName))
 student_school_var_G4 <- tolower(union(T15_USA_G4$fileFormat$variableName, T15_USA_G4$fileFormatSchool$variableName))
-#student_teacher_var_G8 <- tolower(union(T15_USA_G8$fileFormat$variableName, T15_USA_G8$fileFormatTeacher$variableName))
 student_school_var_G8 <- tolower(union(T15_USA_G8$fileFormat$variableName, T15_USA_G8$fileFormatSchool$variableName))
-##YL: discuss with Trang: in the TIMSS paper, it merges G4 student and teacher data together (for Korea), which make the n of rows increase from 4334 to 4771 (because for some students there are more than one teachers). The paper then "This study kept the first observation of the duplicates, which resulted in the original number of 4,334 observations with a total of 586 variables." I think it is a bit problematic. Do you agree? In the same logic, I think it's best not to merge student with teacher variables. I then merge student with school variables, so the number of rows does not increase (becuase each student only has one school principle)
 
 T15_USA_G4_df <- getData(data = T15_USA_G4, varnames = student_school_var_G4,
                       omittedLevels = FALSE, addAttributes = TRUE)
@@ -59,7 +57,7 @@ T15_USA_G8_df <- getData(data = T15_USA_G8, varnames = student_school_var_G8,
 # Use G8 data as a start
 T15_USA_df <- T15_USA_G8_df
 
-# calculate missing rate
+# 1b. calculate missing rate
 #original method
 missing_rate <- colMeans(is.na(T15_USA_df)) 
 
@@ -74,39 +72,15 @@ om <- getAttributes(T15_USA_df,"omittedLevels")
 missing_rate_new <- colMeans(missing_rule(T15_USA_df,om))
 
 summary(missing_rate)
-summary(missing_rate_new) ##YL: confirm with Trang #though they seem to be the same, i think my code is correct, it should be just that there the omittedlevels do not exist in the data frame, it may exist elsewhere in the teacher data or in the assessment data? 
-
-##YL: also I think Trang's code below is not correct?
-missing_rate <- sapply(colnames(P15_USA_df),
-                       function(i) {
-                         mean(missing_rule(P15_USA_df[,i],om))
-                       })
-missing_rate <- sapply(colnames(P15_USA_df),
-                       function(i) {
-                         mean(missing_rule(P15_USA_df[,i],om))
-                       })
-
+summary(missing_rate_new) 
 
 # keep variabels that has missing rate < 0.1
 missing_rate_less0.1 <- missing_rate[missing_rate < 0.1]
 names(missing_rate_less0.1)
 
-# exclude variables that are weights, ids (except for itsex), pvs, (and vars taht are derived from questionnaire items), as were done in the TIMSS paper
-# stuVarCols <- c(9, 51:115) #9 is itsex, accordingly "asbg01" (boy/girl) is excluded
-# tchVarCols <- c(290:416) 
-# stu_tch_VarCols <- c(stuVarCols, tchVarCols)
-# # variable names for Y (changed from using 5 plausible proficiency levels to using 5 reading PVs)
-# #read_ach_lvl <- c("asribm01", "asribm02", "asribm03", "asribm04", "asribm05")
-# read_pv <- "rrea"
-# # try with weight
-# techer_weight <- 577
-# student_weight <- 576
-# stu_tch_VarCols_plusWeight <-  c(stuVarCols, tchVarCols, techer_weight)
 
-
-includeVar <- grep("^jk|wgt|^id|^ita|^bsdg|^bcdg",names(missing_rate_less0.1), value = TRUE, invert = TRUE) ##for a series of derived variables that have both scale and index versions, "^bsdg|^bcdg" is to drop the index version (cuz otherwise they are highly colinear)
-#YL: for G8, a lot of background quesitons have both sci and math versions, should I be concerned that they are highly correlated with each other?
-
+# 1c. Remove some irrelevant variables (i.e. weight)
+includeVar <- grep("^jk|wgt|^id|^ita|^bsdg|^bcdg",names(missing_rate_less0.1), value = TRUE, invert = TRUE)
 # Remove plausible values from includeVar
 pvvars <- getAttributes(T15_USA_df,'pvvars')
 pvvars <- unlist(lapply(pvvars, function(p) p$varnames))
@@ -128,8 +102,13 @@ math_ach_lvl <- c("mmat")
 T15_USA_df_stu_sch <- getData(data = T15_USA_df, varnames = c(includeVar, math_ach_lvl),
                               omittedLevels = TRUE, addAttributes = TRUE)
 
+# Step 2. Feature engineering
+# 2a. Correlational matrix
+# Goal: Idenitfy pairs of highly correlated variables
 
 
+# Step 3. Prepare data for model fitting
+# 3a. Create dependent variable
 # first get the average of bsmmat01-05, and create a new variable to document the proficiency level of that average
 al <- as.numeric(getAttributes(T15_USA_df,'achievementLevels'))
 T15_USA_df_stu_sch_clean <- T15_USA_df_stu_sch %>%
@@ -142,7 +121,7 @@ T15_USA_df_stu_sch_clean <- T15_USA_df_stu_sch %>%
 table(T15_USA_df_stu_sch_clean$math_ach_lvl_blwhigh)
 
 
-
+# 3b. Scaling independent variables
 # identify vars that has more than 2 levels (to turn as numeric later)
 level_morethan2 <- sapply(T15_USA_df_stu_sch_clean, nlevels) > 2
 # note that later i'll have to go through all the variable levels to make sure it makes sense to convert vars that has more than 2 levels into numeric (e.g. in TIMSS G8, there are two vars c("bsbg09a", "bsbg09b") that asks students the origin of their parents, to which one of the level is "i don't know", so for those vars, it is better to have them stay as factors.
@@ -157,18 +136,11 @@ T15_USA_df_clean <- T15_USA_df_stu_sch_clean[, level_morethan2] %>%
 
 
 # check the missing rate for each variable, just in case
-colMeans(is.na(T15_USA_df_clean)) %>% sum()
+colMeans(missing_rule(T15_USA_df_clean,om)) %>% sum()
 
 
 
-### Model building - preProcess -----
-
-# # check the missing rate for each variable, just in case
-# colMeans(is.na(P15_USA_df_stu_tch_weight_clean)) %>% sum()
-
-# Pre-process (e.g. rescale and center) Note that here all predictors should actullay be in likert scale, though some are in 2 levels, and some oar 3, or 4 levels. I think it's best to pre-process them anyway
-#yl : not working for now
-
+# 3d. Prepocess data
 # identify and remove columns with near zero variance (otherwise the models later won't run on this constant terms)
 nzv <- nearZeroVar(T15_USA_df_clean, freqCut = 95/5)
 T15_USA_df_clean <- T15_USA_df_clean[,-c(nzv)]
@@ -179,9 +151,8 @@ processed <- predict(process_configuration, T15_USA_df_clean)
 
 
 
-
-
-### Model building - data split -----
+### Step 4. Model building ===========
+# 4a. data split -----
 set.seed(123)
 trainingIndex <- createDataPartition(processed$math_ach_lvl_blwhigh, p = 0.8, list = FALSE)
 training <- processed[trainingIndex, ]
@@ -191,10 +162,9 @@ test <- processed[-trainingIndex, ]
 ### Decision Tree (CART) -----
 dtree_fit <- train(math_ach_lvl_blwhigh ~., 
                    data = training, 
-                   method = "rpart")
-                   #trControl=trainControl(method="oob", number=25),
-                   #tuneLength = 10, 
-                   #parms=list(split='information')
+                   method = "rpart",
+                   trControl=trainControl(method="cv", number=10),
+                   tuneLength = 10)
 
 dtree_fit
 
@@ -203,78 +173,106 @@ test_pred <- predict(dtree_fit, test)
 # See the accuracy of the model
 confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh ))
 
-# ### Decision Tree (CART) - with weight
-# dtree_fit_weight <- train(read_ach_lvl_atabv4 ~., 
-#                    data = training_weight, 
-#                    method = "rpart",
-#                    weights = tchwgt)
-# #trControl=trainControl(method="oob", number=25),
-# #tuneLength = 10, 
-# #parms=list(split='information')
-# 
-# dtree_fit_weight
-# 
-# # Apply the model to the test set
-# test_pred <- predict(dtree_fit_weight, test_weight)
-# # See the accuracy of the model
-# confusionMatrix(table(test_pred , test_weight$read_ach_lvl_atabv4 ))
-
-
-
 
 ### Random Forest -----
+# try using tuneLength #mtry = 83 is used in the end
 mtry <- sqrt(ncol(training) - 1) 
-rf <- train(read_ach_lvl_blwhigh~., 
+rf <- train(math_ach_lvl_blwhigh~., 
              data=training, 
              method="rf", 
              metric="Accuracy", 
-             tuneGrid=expand.grid(.mtry=mtry), 
+             #tuneGrid=expand.grid(.mtry=mtry), 
              trControl=trainControl(method="oob", number=25),
              #default to be 500
-             ntree = 500)
+             ntree = 500,
+             tuneLength = 5)
 print(rf)
 
-
-# Apply the model to the test set
 test_pred <- predict(rf, test)
-# Use confusionMatrix
-confusionMatrix(table(test_pred , test$read_ach_lvl_blwhigh ))
+confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh ))
+
+# try using tuneGrid
+mtry <- sqrt(ncol(training) - 1)
+rfGrid <- expand.grid(mtry = c(5,  13 , 18, 25, 30))
+
+rf2 <- train(math_ach_lvl_blwhigh~., 
+            data=training, 
+            method="rf", 
+            metric="Accuracy", 
+            trControl=trainControl(method="oob", number=25),
+            #default to be 500
+            ntree = 500,
+            #tuneLength = 10,
+            tuneGrid=rfGrid)
+print(rf2)
+
+test_pred <- predict(rf2, test)
+confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh ))
+
+
+### XGBoosting
+
+
+### Random Forest by Randomization -----
+# rf3 <- train(math_ach_lvl_blwhigh~., 
+#              data=training, 
+#              method="extraTrees", 
+#              metric="Accuracy", 
+#              trControl=trainControl(method="cv", number=25),
+#              #default to be 500
+#              ntree = 500,
+#              tuneLength = 3)
+# print(rf3)
+# 
+# test_pred <- predict(rf3, test)
+# confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh ))
+# 
+
+
+
+
 
 
 # Variable importance
 # top 20 most important variables
 varImp(rf) #"scale = TRUE" is the default
 top20_plot <- plot(varImp(rf), top = 20)
+top20_plot
+
 # get the names of the top 20 variables
 top20_varName <- as.character(top20_plot$panel.args[[1]]$y)
 
+codebook %>% 
+  filter(variableName %in% top20_varName) %>% 
+  View()
 
-# # Create new RF models with the top variables
-# data_top20 <- T15_USA_df_stu_clean %>% 
-#   select(CHRONIC_ABSENTEE,
-#          top20_varName)
-# set.seed(123)
-# testIndex <- createDataPartition(data_top20$CHRONIC_ABSENTEE, p = 0.8, list = FALSE)
-# training <- data_top20[-testIndex, ]
-# test <- data_top20[testIndex, ]
-# 
-# # Create model
-# mtry <- sqrt(ncol(data_top10) - 1) 
-# #mtry <- 16 #could do fine tuning to find the optimal mtry value
-# rf_CHRONIC_ABSENTEE_top10 <- train(CHRONIC_ABSENTEE~., 
-#                                    data=training, 
-#                                    method="rf", 
-#                                    metric="Accuracy", 
-#                                    tuneGrid=expand.grid(.mtry=mtry), 
-#                                    trControl=trainControl(method="oob", number=25),
-#                                    #default to be 500
-#                                    ntree = 1000)
-# print(rf_CHRONIC_ABSENTEE_top10)
-# 
-# # Apply the model to the test set
-# test_pred <- predict(rf_CHRONIC_ABSENTEE_top10, test)
-# # Use confusionMatrix
-# confusion_matrix_top10 <- confusionMatrix(table(test_pred , test$CHRONIC_ABSENTEE ))
+# Create new RF models with the top variables
+data_top20 <- T15_USA_df_clean %>%
+  select(math_ach_lvl_blwhigh,
+         top20_varName)
+set.seed(123)
+testIndex <- createDataPartition(data_top20$math_ach_lvl_blwhigh, p = 0.8, list = FALSE)
+training <- data_top20[trainingIndex, ]
+test <- data_top20[-trainingIndex, ]
+
+# Create model
+mtry <- sqrt(ncol(data_top10) - 1)
+#mtry <- 16 #could do fine tuning to find the optimal mtry value
+rf_top20 <- train(math_ach_lvl_blwhigh~., 
+            data=training, 
+            method="rf", 
+            metric="Accuracy", 
+            #tuneGrid=expand.grid(.mtry=mtry), 
+            trControl=trainControl(method="oob", number=25),
+            #default to be 500
+            ntree = 500,
+            tuneLength = 5)
+print(rf_top20)
+
+# Apply the model to the test set
+test_pred <- predict(rf_top20, test)
+# Use confusionMatrix
+confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh ))
 
 
 # ### Random Forest - with weights 
@@ -309,22 +307,39 @@ top20_varName <- as.character(top20_plot$panel.args[[1]]$y)
 # setdiff(top20_varName, top20_varName_weight)
 
 
+### LASSO -----
+lasso <- train(math_ach_lvl_blwhigh ~., 
+             data = training, 
+             method = "glmnet",
+             alpha = 0.5,
+             lambda = 1,
+             family = "binomial")
+             #trControl=trainControl(method="cv", number=10))
+print(lasso)
+
+test_pred <- predict(lasso, test)
+confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh ))
 
 
-### AdaBoost ----- (YL: Trang: somehow this is taking forever to train, could you take a look?)
-adaboost <- train(read_ach_lvl_blwhigh ~., 
+
+### Boosted Classification Trees ----- (YL: Trang: somehow this is taking forever to train, could you take a look?)
+ada <- train(math_ach_lvl_blwhigh ~., 
                   data = training, 
-                  method = "adaboost")
+                  method = "ada",
+                  iter = 500,
+                  nu = 0.05,
+                  maxdepth = 50
+                  )
 #trControl=trainControl(method="oob", number=25),
 #tuneLength = 10, 
 #parms=list(split='information')
 
-adaboost
+ada
 
 # Apply the model to the test set
-test_pred <- predict(adaboost, test)
+test_pred <- predict(ada, test)
 # See the accuracy of the model
-confusionMatrix(table(test_pred , test$read_ach_lvl_atabv4 ))
+confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh))
 
 
 
@@ -332,7 +347,36 @@ confusionMatrix(table(test_pred , test$read_ach_lvl_atabv4 ))
 
 ### GBM (Gradient Boosted Machines) /XGBoost -----
 
-### GLM -----
+### GLM ----- ##YL: ASK Trang, it's not working ;/
+glm <- train(math_ach_lvl_blwhigh ~., 
+             data = training, 
+             method = "glmnet",
+             alpha = 1,
+             lambda = 1)
+#trControl=trainControl(method="oob", number=25),
+#tuneLength = 10, 
+#parms=list(split='information')
+
+glm
+
+# Apply the model to the test set
+test_pred <- predict(glm, test)
+# See the accuracy of the model
+confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh))
+
+
+glm2 <- glm(math_ach_lvl_blwhigh ~., 
+            data = training,
+            family = binomial())
+
+summary(glm2)
+test_pred <- predict(glm2, test, type="response")
+test_pred[test_pred >= 0.5] = 1
+test_pred[test_pred < 0.5] = 0
+
+confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh))
+
+
 
 ### Unsupervised ML - Kmeans cluster -----
 #reference: https://uc-r.github.io/kmeans_clustering
@@ -341,11 +385,11 @@ library(cluster)    # clustering algorithms
 library(factoextra) # clustering algorithms & visualization
 
 # need to convert all columns (including the factors) into numeric
-low_performer <- P15_USA_df_clean[P15_USA_df_clean$read_ach_lvl_blwhigh == 1,]
+low_performer <- T15_USA_df_clean[T15_USA_df_clean$math_ach_lvl_blwhigh == 1,]
 low_performer_numeric <- low_performer %>% 
   mutate_all(as.numeric) %>%  #note that, by doing this, 2-level factors are turned into 1 & 2, instead of 0 & 1, may need to fix this later
   # de-select the label
-  select(-read_ach_lvl_blwhigh)
+  select(-math_ach_lvl_blwhigh)
 
 # standardize these columns
 process_configuration_2 <- preProcess(low_performer_numeric,
@@ -370,9 +414,9 @@ low_performer_numeric %>%
   as_tibble() %>%
   mutate(cluster = k2$cluster) %>%
   #just randomly pick the two continuous variabels to visualize
-  #atbg01 - GEN\YEARS BEEN TEACHING
-  #atbr07 - READ\TIME SPENT READING INSTR
-  ggplot(aes(atbr07, atbg01, color = factor(cluster))) +
+  #bsbgscm - Student Confident in Mathematics/SCL
+  #bsbgher - Home Educational Resources/SCL
+  ggplot(aes(bsbgscm, bsbgher, color = factor(cluster))) +
   geom_point()
 
 ### Determining Optimal number of Clusters
@@ -380,12 +424,12 @@ low_performer_numeric %>%
 ## Elbow method (there are two other methods mentioned in the reference)
 set.seed(123)
 # method = "wss" ---> compute total within-cluster sum of square
-fviz_nbclust(low_performer_numeric, kmeans, method = "wss") 
+fviz_nbclust(low_performer_numeric, kmeans, method = "wss", k.max = 10) 
 
 
-# Compute k-means clustering with k = 6
+# Compute k-means clustering with k = 4
 set.seed(123)
-final <- kmeans(low_performer_numeric, 6, nstart = 25)
+final <- kmeans(low_performer_numeric, 4, nstart = 25)
 print(final)
 
 #visualize
