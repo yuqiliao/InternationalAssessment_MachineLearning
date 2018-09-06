@@ -57,7 +57,49 @@ T15_USA_G8_df <- getData(data = T15_USA_G8, varnames = student_school_var_G8,
 # Use G8 data as a start
 T15_USA_df <- T15_USA_G8_df
 
-# 1b. calculate missing rate
+
+# 1b. Remove some irrelevant variables (i.e. weight, PVs, math and science items)
+# for the derived scale variables, drop the item-level variables that the scale variables are derived from
+  #Home Educational Resources/SCL
+  #Students Sense of School Belonging/SCL:bsbg15a-g,
+  #Student Bullying/SCL:bsbg16a-i
+  #Students Like Learning Mathematics/SCL:bsbm17a-i
+  #Engaging Teaching in Math Lessons/SCL:bsbm18a-j
+  #Student Confident in Mathematics/SCL:bsbm19a-i
+  #Students Value Mathematics/SCL:bsbm20a-i
+  #Students Like Learning Science/SCL:bsbs21a-i
+  #Engaging Teaching in Science Lessons/SCL:bsbs22-
+  #Student Confident in Sciences/SCL
+  #...
+  #Instr Aff by Mat Res Shortage-Prncpl/SCL:bcbg13a-, b-
+  #Instr Aff by Sci Res Shortage-Prncpl/SCL: bcbg13a-, c-
+  #School Emph on Acad Success-Prncpl/SCL:bcbg14-
+  #School Discipline Problems-Prncpl/SCL:bcbg15-
+  
+includeVar <- grep("bsbg04|bsdg06s|^bsbg15|^bsbg16|^bsbm17|^bsbm18|^bsbm19|^bsbm20|^bsbs21|^bsbs22|^bsbs23|^bsbs24|^bsbb22|^bsbb23|^bsbb24|^bsbe26|^bsbe27|^bsbe28|^bsbc30|^bsbc31|^bsbc32|^bsbp34|^bsbp35|^bsbp36|^bcbg13|^bcbg14|^bcbg15", names(T15_USA_df), value = TRUE, invert = TRUE)
+
+
+# Remove weights, index version of the derived variables, and cognitive items
+includeVar <- grep("^jk|wgt|^id|^ita|^bsdg|^bcdg|^m0|^s0|^si|^sr|^mi|^mr",includeVar, value = TRUE, invert = TRUE)
+# add back 
+includeVar <- c(includeVar, "bsdg06s", "bsdgedup", "bcdg03", "bcdg07hy")
+
+# Remove plausible values from includeVar
+pvvars <- getAttributes(T15_USA_df,'pvvars')
+pvvars <- unlist(lapply(pvvars, function(p) p$varnames))
+includeVar <- includeVar[!includeVar %in% pvvars]
+
+# check codebook of included variables
+codebook <- showCodebook(T15_USA_df)
+codebook[tolower(codebook$variableName) %in% includeVar,] %>% View()
+
+
+# after looking at the codebook, exclude some more variables
+excludeVar <- c("ilreliab","version","bsbg01", "itlang", "bsdmlowp", "bsdslowp") #exclude "itlang" cuz the US only has one level
+includeVar <- includeVar[!includeVar %in% excludeVar]
+
+
+# 1c. calculate missing rate and remove variables that has more than 10% missing
 #original method
 missing_rate <- colMeans(is.na(T15_USA_df)) 
 
@@ -78,21 +120,9 @@ summary(missing_rate_new)
 missing_rate_less0.1 <- missing_rate[missing_rate < 0.1]
 names(missing_rate_less0.1)
 
+includeVar <- includeVar[includeVar %in% names(missing_rate_less0.1)]
 
-# 1c. Remove some irrelevant variables (i.e. weight)
-includeVar <- grep("^jk|wgt|^id|^ita|^bsdg|^bcdg",names(missing_rate_less0.1), value = TRUE, invert = TRUE)
-# Remove plausible values from includeVar
-pvvars <- getAttributes(T15_USA_df,'pvvars')
-pvvars <- unlist(lapply(pvvars, function(p) p$varnames))
-includeVar <- includeVar[!includeVar %in% pvvars]
 
-# check codebook of included variables
-codebook <- showCodebook(T15_USA_df)
-codebook <- codebook[tolower(codebook$variableName) %in% includeVar,]
-
-# after looking at the codebook, exclude some variables
-excludeVar <- c("ilreliab","version","bsbg01", "itlang", "bsdmlowp", "bsdslowp") #exclude "itlang" cuz the US only has one level
-includeVar <- includeVar[!includeVar %in% excludeVar]
 
 ### Read in (2nd time) to have all right-hand-site variables needed for the model=====
 # Reformat outcome variable # define variable names for Y
@@ -105,7 +135,8 @@ T15_USA_df_stu_sch <- getData(data = T15_USA_df, varnames = c(includeVar, math_a
 # Step 2. Feature engineering
 # 2a. Correlational matrix
 # Goal: Idenitfy pairs of highly correlated variables
-
+correlationMatrix <- cor(T15_USA_df_clean[, 1:40])
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.5)
 
 # Step 3. Prepare data for model fitting
 # 3a. Create dependent variable
@@ -247,64 +278,9 @@ codebook %>%
   View()
 
 # Create new RF models with the top variables
-data_top20 <- T15_USA_df_clean %>%
-  select(math_ach_lvl_blwhigh,
-         top20_varName)
-set.seed(123)
-testIndex <- createDataPartition(data_top20$math_ach_lvl_blwhigh, p = 0.8, list = FALSE)
-training <- data_top20[trainingIndex, ]
-test <- data_top20[-trainingIndex, ]
-
-# Create model
-mtry <- sqrt(ncol(data_top10) - 1)
-#mtry <- 16 #could do fine tuning to find the optimal mtry value
-rf_top20 <- train(math_ach_lvl_blwhigh~., 
-            data=training, 
-            method="rf", 
-            metric="Accuracy", 
-            #tuneGrid=expand.grid(.mtry=mtry), 
-            trControl=trainControl(method="oob", number=25),
-            #default to be 500
-            ntree = 500,
-            tuneLength = 5)
-print(rf_top20)
-
-# Apply the model to the test set
-test_pred <- predict(rf_top20, test)
-# Use confusionMatrix
-confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh ))
 
 
-# ### Random Forest - with weights 
-# mtry <- sqrt(ncol(training) - 1) 
-# rf_weight <- train(read_ach_lvl_atabv4~., 
-#             data=training_weight, 
-#             method="rf", 
-#             metric="Accuracy", 
-#             tuneGrid=expand.grid(.mtry=mtry), 
-#             trControl=trainControl(method="oob", number=25),
-#             #default to be 500
-#             ntree = 500)
-# print(rf_weight)
-# 
-# 
-# # Apply the model to the test set
-# test_pred_weight <- predict(rf_weight, test_weight)
-# # Use confusionMatrix
-# confusionMatrix(table(test_pred_weight , test_weight$read_ach_lvl_atabv4 ))
-# 
-# 
-# # Variable importance
-# # top 20 most important variables
-# varImp(rf_weight) #"scale = TRUE" is the default
-# top20_plot_weight <- plot(varImp(rf_weight), top = 20)
-# # get the names of the top 20 variables
-# top20_varName_weight <- as.character(top20_plot_weight$panel.args[[1]]$y)
-# 
-# 
-# #find intersection
-# intersect(top20_varName, top20_varName_weight)
-# setdiff(top20_varName, top20_varName_weight)
+
 
 
 ### LASSO -----
@@ -342,10 +318,6 @@ test_pred <- predict(ada, test)
 confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh))
 
 
-
-### Nerual network -----
-
-### GBM (Gradient Boosted Machines) /XGBoost -----
 
 ### GLM ----- ##YL: ASK Trang, it's not working ;/
 glm <- train(math_ach_lvl_blwhigh ~., 
