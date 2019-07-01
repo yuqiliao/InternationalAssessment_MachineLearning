@@ -536,249 +536,249 @@ Sys.time()
 
 
 
-
-### Random Forest -----
-# try using tuneLength #mtry = 83 is used in the end
-rf <- train(math_ach_lvl_blwhigh~. -bsmmat_mean -absent_ever -absent_2more -repeat_ever, 
-             data=training, 
-             method="rf", 
-             metric="Accuracy", 
-             #tuneGrid=expand.grid(.mtry=mtry), 
-             trControl=trainControl(method="oob", number=25),
-             #default to be 500
-             ntree = 500,
-             tuneLength = 2)
-print(rf)
-
-test_pred_rf <- predict(rf, test)
-result_rf <- confusionMatrix(table(test_pred_rf , test$math_ach_lvl_blwhigh ), positive = "low")
-
-# try to use Sens as the metric
-rf_2 <- train(math_ach_lvl_blwhigh~., 
-            data=training, 
-            method="rf", 
-            metric = "Sens",
-            #tuneGrid=expand.grid(.mtry=mtry), 
-            trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
-            #default to be 500
-            ntree = 1000,
-            tuneLength = 10)
-print(rf_2)
-
-test_pred_rf_2 <- predict(rf_2, test)
-result_rf_2 <- confusionMatrix(table(test_pred_rf_2 , test$math_ach_lvl_blwhigh ))
-
-
-# # try using tuneGrid
-# mtry <- sqrt(ncol(training) - 1)
-# rfGrid <- expand.grid(mtry = c(5,  13 , 18, 25, 30))
 # 
-# rf2 <- train(math_ach_lvl_blwhigh~., 
+# ### Random Forest -----
+# # try using tuneLength #mtry = 83 is used in the end
+# rf <- train(math_ach_lvl_blwhigh~. -bsmmat_mean -absent_ever -absent_2more -repeat_ever, 
+#              data=training, 
+#              method="rf", 
+#              metric="Accuracy", 
+#              #tuneGrid=expand.grid(.mtry=mtry), 
+#              trControl=trainControl(method="oob", number=25),
+#              #default to be 500
+#              ntree = 500,
+#              tuneLength = 2)
+# print(rf)
+# 
+# test_pred_rf <- predict(rf, test)
+# result_rf <- confusionMatrix(table(test_pred_rf , test$math_ach_lvl_blwhigh ), positive = "low")
+# 
+# # try to use Sens as the metric
+# rf_2 <- train(math_ach_lvl_blwhigh~., 
 #             data=training, 
 #             method="rf", 
-#             metric="Accuracy", 
-#             trControl=trainControl(method="oob", number=25),
+#             metric = "Sens",
+#             #tuneGrid=expand.grid(.mtry=mtry), 
+#             trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
 #             #default to be 500
-#             ntree = 500,
-#             #tuneLength = 10,
-#             tuneGrid=rfGrid)
-# print(rf2)
+#             ntree = 1000,
+#             tuneLength = 10)
+# print(rf_2)
 # 
-# test_pred <- predict(rf2, test)
-# confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh ))
-
-
-### XGBoosting =====
-# xgboostingGrid <- expand.grid(nrounds = 300,
-#                               alpha = 10^seq(-3, 3, length = 20), 
-#                               lambda = 10^seq(-3, 3, length = 20),
-#                               eta = c(0.1, 0.2, 0.3))
-
-xgboosting <- train(math_ach_lvl_blwhigh~., 
-              data=training, 
-              method="xgbLinear", 
-              metric = "Sens",
-              trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
-              tuneLength = 5)
-              #tuneGrid=xgboostingGrid,
-              #verbose = TRUE)
-print(xgboosting)
-
-test_pred_xgboosting <- predict(xgboosting, test)
-result_xgboosting <- confusionMatrix(table(test_pred_xgboosting , test$math_ach_lvl_blwhigh ))
-
-
-
-# ### Random Forest by Randomization -----
-# rfr <- train(math_ach_lvl_blwhigh~.,
-#              data=training,
-#              method="extraTrees",
-#              metric="Accuracy",
-#              #trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
-#              #default to be 500
-#              ntree = 500)
-# print(rfr)
-# 
-# test_pred <- predict(rfr, test)
-# confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh ))
-
-
-### Nerual network -----
-nnet <- train(math_ach_lvl_blwhigh~., 
-                    data=training, 
-                    method="nnet", 
-                    metric = "Sens",
-                    trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
-                    tuneLength = 5)
-print(nnet)
-
-test_pred_nnet <- predict(nnet, test)
-result_nnet <- confusionMatrix(table(test_pred_nnet , test$math_ach_lvl_blwhigh ))
-
-
-### SVM -----
-svmGrid <- expand.grid(C = c(0.1 , 0.3, 0.5, 0.7, 1))
-svm <- train(math_ach_lvl_blwhigh~., 
-              data=training, 
-              method="svmLinear", 
-              metric = "Sens",
-              trControl=trainControl(method="cv", number=5,  classProbs=TRUE, summaryFunction = twoClassSummary),
-              tuneGrid=svmGrid)
-print(svm)
-
-test_pred_svm <- predict(svm, test)
-result_svm <- confusionMatrix(table(test_pred_svm , test$math_ach_lvl_blwhigh ))
-
-# 
-# # Variable importance
-# # top 20 most important variables
-# varImp(rf_2) #"scale = TRUE" is the default
-# top20_plot <- plot(varImp(rf_2), top = 20)
-# top20_plot
-# 
-# # get the names of the top 20 variables
-# top20_varName <- as.character(top20_plot$panel.args[[1]]$y)
-# 
-# codebook %>% 
-#   filter(variableName %in% top20_varName) %>% 
-#   View()
-# 
-# # Create new RF models with the top variables
-
-
-
-### Ridge -----
-ridgeGrid <- expand.grid(alpha = 0, lambda = 10^seq(-3, 3, length = 100))
-ridge <- train(math_ach_lvl_blwhigh~., 
-               data=training, 
-               method="glmnet", 
-               metric = "Sens",
-               trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
-               tuneGrid=ridgeGrid)
-print(ridge)
-
-test_pred_ridge <- predict(ridge, test)
-result_ridge <- confusionMatrix(table(test_pred_ridge , test$math_ach_lvl_blwhigh ))
-
-
-### LASSO -----
-lassoGrid <- expand.grid(alpha = 1, lambda = 10^seq(-3, 3, length = 100))
-lasso <- train(math_ach_lvl_blwhigh~., 
-             data=training, 
-             method="glmnet", 
-             metric = "Sens",
-             trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
-             tuneGrid=lassoGrid)
-print(lasso)
-
-test_pred_lasso <- predict(lasso, test)
-result_lasso <- confusionMatrix(table(test_pred_lasso , test$math_ach_lvl_blwhigh ))
-
-### Elastic net -----
-#lassoGrid <- expand.grid(alpha = 1, lambda = 10^seq(-3, 3, length = 100))
-elasticNet <- train(math_ach_lvl_blwhigh~., 
-               data=training, 
-               method="glmnet", 
-               metric = "Sens",
-               trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
-               tuneLength = 10)
-print(elasticNet)
-
-test_pred_elasticNet <- predict(elasticNet, test)
-result_elasticNet <- confusionMatrix(table(test_pred_elasticNet , test$math_ach_lvl_blwhigh ))
-
-### compare ridge, lasso and elasticNet =====
-models <- list(ridge = ridge, lasso = lasso, elasticNet = elasticNet)
-resamples(models) %>% summary( metric = "Sens")
-
-### compare all models? =====
-#models <- list(ridge = ridge, lasso = lasso, elasticNet = elasticNet)
-#resamples(models) %>% summary( metric = "Sens")
-
-
-### Boosted Classification Trees ----- (YL: Trang: somehow this is taking forever to train, could you take a look?)
-# ada <- train(math_ach_lvl_blwhigh ~., 
-#                   data = training, 
-#                   method = "ada",
-#                   metric = "Sens",
-#                   trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
-#                   tuneLength = 5)
+# test_pred_rf_2 <- predict(rf_2, test)
+# result_rf_2 <- confusionMatrix(table(test_pred_rf_2 , test$math_ach_lvl_blwhigh ))
 # 
 # 
-# ada
-
-# Apply the model to the test set
-test_pred_ada <- predict(ada, test)
-# See the accuracy of the model
-result_ada <- confusionMatrix(table(test_pred_ada , test$math_ach_lvl_blwhigh))
-
-
-
-### GLM ----- 
-# use glm() no cross validation
-glm = glm(math_ach_lvl_blwhigh ~., 
-               data=training, 
-               family=binomial)
-test_pred_glm <- predict(glm, test, type="response")
-test_pred_glm[test_pred_glm >= 0.5] = "not_low"
-test_pred_glm[test_pred_glm < 0.5] = "low"
-
-result_glm <- confusionMatrix(table(test_pred_glm , test$math_ach_lvl_blwhigh))
-
-
-# use caret's glm with cross validation
-glm_2 <- train(math_ach_lvl_blwhigh ~., 
-             data = training, 
-             method = "glm",
-             family = binomial)
-             #trControl = trainControl(method="cv", number=5))
-
-glm_2
-
-# Apply the model to the test set
-test_pred_glm_2 <- predict(glm_2, test)
-# See the accuracy of the model
-result_glm_2 <- confusionMatrix(table(test_pred_glm_2 , test$math_ach_lvl_blwhigh))
-
-##YL: glm and glm_2 are exactly the same, which is to be expected based on this post "https://www.kaggle.com/c/titanic/discussion/13582"
-
-
-
-# use the only the traditional RHS variables
-glm_3 <- train(math_ach_lvl_blwhigh ~ 	
-                 itsex + bsdage + bsbg10a + bsbgher + bsdgedup + bsbgscm + bcbgdas + bcbg05a + bcbg05b, 
-               data = training, 
-               method = "glm",
-               family = binomial)
-
-glm_3
-
-# Apply the model to the test set
-test_pred_glm_3 <- predict(glm_3, test)
-# See the accuracy of the model
-result_glm_3 <- confusionMatrix(table(test_pred_glm_3 , test$math_ach_lvl_blwhigh))
-
-##YL: glm and glm_2 are exactly the same, which is to be expected based on this post "https://www.kaggle.com/c/titanic/discussion/13582"
+# # # try using tuneGrid
+# # mtry <- sqrt(ncol(training) - 1)
+# # rfGrid <- expand.grid(mtry = c(5,  13 , 18, 25, 30))
+# # 
+# # rf2 <- train(math_ach_lvl_blwhigh~., 
+# #             data=training, 
+# #             method="rf", 
+# #             metric="Accuracy", 
+# #             trControl=trainControl(method="oob", number=25),
+# #             #default to be 500
+# #             ntree = 500,
+# #             #tuneLength = 10,
+# #             tuneGrid=rfGrid)
+# # print(rf2)
+# # 
+# # test_pred <- predict(rf2, test)
+# # confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh ))
+# 
+# 
+# ### XGBoosting =====
+# # xgboostingGrid <- expand.grid(nrounds = 300,
+# #                               alpha = 10^seq(-3, 3, length = 20), 
+# #                               lambda = 10^seq(-3, 3, length = 20),
+# #                               eta = c(0.1, 0.2, 0.3))
+# 
+# xgboosting <- train(math_ach_lvl_blwhigh~., 
+#               data=training, 
+#               method="xgbLinear", 
+#               metric = "Sens",
+#               trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
+#               tuneLength = 5)
+#               #tuneGrid=xgboostingGrid,
+#               #verbose = TRUE)
+# print(xgboosting)
+# 
+# test_pred_xgboosting <- predict(xgboosting, test)
+# result_xgboosting <- confusionMatrix(table(test_pred_xgboosting , test$math_ach_lvl_blwhigh ))
+# 
+# 
+# 
+# # ### Random Forest by Randomization -----
+# # rfr <- train(math_ach_lvl_blwhigh~.,
+# #              data=training,
+# #              method="extraTrees",
+# #              metric="Accuracy",
+# #              #trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
+# #              #default to be 500
+# #              ntree = 500)
+# # print(rfr)
+# # 
+# # test_pred <- predict(rfr, test)
+# # confusionMatrix(table(test_pred , test$math_ach_lvl_blwhigh ))
+# 
+# 
+# ### Nerual network -----
+# nnet <- train(math_ach_lvl_blwhigh~., 
+#                     data=training, 
+#                     method="nnet", 
+#                     metric = "Sens",
+#                     trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
+#                     tuneLength = 5)
+# print(nnet)
+# 
+# test_pred_nnet <- predict(nnet, test)
+# result_nnet <- confusionMatrix(table(test_pred_nnet , test$math_ach_lvl_blwhigh ))
+# 
+# 
+# ### SVM -----
+# svmGrid <- expand.grid(C = c(0.1 , 0.3, 0.5, 0.7, 1))
+# svm <- train(math_ach_lvl_blwhigh~., 
+#               data=training, 
+#               method="svmLinear", 
+#               metric = "Sens",
+#               trControl=trainControl(method="cv", number=5,  classProbs=TRUE, summaryFunction = twoClassSummary),
+#               tuneGrid=svmGrid)
+# print(svm)
+# 
+# test_pred_svm <- predict(svm, test)
+# result_svm <- confusionMatrix(table(test_pred_svm , test$math_ach_lvl_blwhigh ))
+# 
+# # 
+# # # Variable importance
+# # # top 20 most important variables
+# # varImp(rf_2) #"scale = TRUE" is the default
+# # top20_plot <- plot(varImp(rf_2), top = 20)
+# # top20_plot
+# # 
+# # # get the names of the top 20 variables
+# # top20_varName <- as.character(top20_plot$panel.args[[1]]$y)
+# # 
+# # codebook %>% 
+# #   filter(variableName %in% top20_varName) %>% 
+# #   View()
+# # 
+# # # Create new RF models with the top variables
+# 
+# 
+# 
+# ### Ridge -----
+# ridgeGrid <- expand.grid(alpha = 0, lambda = 10^seq(-3, 3, length = 100))
+# ridge <- train(math_ach_lvl_blwhigh~., 
+#                data=training, 
+#                method="glmnet", 
+#                metric = "Sens",
+#                trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
+#                tuneGrid=ridgeGrid)
+# print(ridge)
+# 
+# test_pred_ridge <- predict(ridge, test)
+# result_ridge <- confusionMatrix(table(test_pred_ridge , test$math_ach_lvl_blwhigh ))
+# 
+# 
+# ### LASSO -----
+# lassoGrid <- expand.grid(alpha = 1, lambda = 10^seq(-3, 3, length = 100))
+# lasso <- train(math_ach_lvl_blwhigh~., 
+#              data=training, 
+#              method="glmnet", 
+#              metric = "Sens",
+#              trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
+#              tuneGrid=lassoGrid)
+# print(lasso)
+# 
+# test_pred_lasso <- predict(lasso, test)
+# result_lasso <- confusionMatrix(table(test_pred_lasso , test$math_ach_lvl_blwhigh ))
+# 
+# ### Elastic net -----
+# #lassoGrid <- expand.grid(alpha = 1, lambda = 10^seq(-3, 3, length = 100))
+# elasticNet <- train(math_ach_lvl_blwhigh~., 
+#                data=training, 
+#                method="glmnet", 
+#                metric = "Sens",
+#                trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
+#                tuneLength = 10)
+# print(elasticNet)
+# 
+# test_pred_elasticNet <- predict(elasticNet, test)
+# result_elasticNet <- confusionMatrix(table(test_pred_elasticNet , test$math_ach_lvl_blwhigh ))
+# 
+# ### compare ridge, lasso and elasticNet =====
+# models <- list(ridge = ridge, lasso = lasso, elasticNet = elasticNet)
+# resamples(models) %>% summary( metric = "Sens")
+# 
+# ### compare all models? =====
+# #models <- list(ridge = ridge, lasso = lasso, elasticNet = elasticNet)
+# #resamples(models) %>% summary( metric = "Sens")
+# 
+# 
+# ### Boosted Classification Trees ----- (YL: Trang: somehow this is taking forever to train, could you take a look?)
+# # ada <- train(math_ach_lvl_blwhigh ~., 
+# #                   data = training, 
+# #                   method = "ada",
+# #                   metric = "Sens",
+# #                   trControl=trainControl(method="cv", number=5, classProbs=TRUE, summaryFunction = twoClassSummary),
+# #                   tuneLength = 5)
+# # 
+# # 
+# # ada
+# 
+# # Apply the model to the test set
+# test_pred_ada <- predict(ada, test)
+# # See the accuracy of the model
+# result_ada <- confusionMatrix(table(test_pred_ada , test$math_ach_lvl_blwhigh))
+# 
+# 
+# 
+# ### GLM ----- 
+# # use glm() no cross validation
+# glm = glm(math_ach_lvl_blwhigh ~., 
+#                data=training, 
+#                family=binomial)
+# test_pred_glm <- predict(glm, test, type="response")
+# test_pred_glm[test_pred_glm >= 0.5] = "not_low"
+# test_pred_glm[test_pred_glm < 0.5] = "low"
+# 
+# result_glm <- confusionMatrix(table(test_pred_glm , test$math_ach_lvl_blwhigh))
+# 
+# 
+# # use caret's glm with cross validation
+# glm_2 <- train(math_ach_lvl_blwhigh ~., 
+#              data = training, 
+#              method = "glm",
+#              family = binomial)
+#              #trControl = trainControl(method="cv", number=5))
+# 
+# glm_2
+# 
+# # Apply the model to the test set
+# test_pred_glm_2 <- predict(glm_2, test)
+# # See the accuracy of the model
+# result_glm_2 <- confusionMatrix(table(test_pred_glm_2 , test$math_ach_lvl_blwhigh))
+# 
+# ##YL: glm and glm_2 are exactly the same, which is to be expected based on this post "https://www.kaggle.com/c/titanic/discussion/13582"
+# 
+# 
+# 
+# # use the only the traditional RHS variables
+# glm_3 <- train(math_ach_lvl_blwhigh ~ 	
+#                  itsex + bsdage + bsbg10a + bsbgher + bsdgedup + bsbgscm + bcbgdas + bcbg05a + bcbg05b, 
+#                data = training, 
+#                method = "glm",
+#                family = binomial)
+# 
+# glm_3
+# 
+# # Apply the model to the test set
+# test_pred_glm_3 <- predict(glm_3, test)
+# # See the accuracy of the model
+# result_glm_3 <- confusionMatrix(table(test_pred_glm_3 , test$math_ach_lvl_blwhigh))
+# 
+# ##YL: glm and glm_2 are exactly the same, which is to be expected based on this post "https://www.kaggle.com/c/titanic/discussion/13582"
 
 
 
